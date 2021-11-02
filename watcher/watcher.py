@@ -111,21 +111,28 @@ class Watcher(object):
         await self.send_event(EventType.JudgeStatus, message)
 
     async def check_judge_api_status(self):
-        status_request = await self.judge_session.get(f"{api_url}/")
-        if status_request.ok:
-            await self.update_judge_status(True, f"Reconnected to judge")
-        else:
-            await self.update_judge_status(False, f"Failed to connect to judge: {status_request.status}")
+        try:
+            status_request = await self.judge_session.get(f"{api_url}/")
+            if status_request.ok:
+                await self.update_judge_status(True, f"Reconnected to judge")
+            else:
+                await self.update_judge_status(False, f"Failed to connect to judge: {status_request.status}")
+        except aiohttp.ClientError as e:
+            await self.update_judge_status(False, f"Failed to connect to judge: {e}")
 
     async def request_from_judge_api(self, suffix, **kwargs):
         url = f"{api_url}{suffix}"
-        response = await self.judge_session.get(url, **kwargs)
+        try:
+            response = await self.judge_session.get(url, **kwargs)
 
-        if not response.ok:
-            logging.debug("Error during request %s: %d", url, response.status)
-            await self.update_judge_status(False, f"Failed to query judge {url}: {response.status}")
+            if not response.ok:
+                logging.debug("Error during request %s: %d", url, response.status)
+                await self.update_judge_status(False, f"Failed to query judge {url}: {response.status}")
+                return None
+            return await response.json()
+        except aiohttp.ClientError as e:
+            logging.debug("Error during request %s: %s", url, e)
             return None
-        return await response.json()
 
     async def query_judge_host_status(self):
         judge_hosts = await self.request_from_judge_api("/judgehosts")
