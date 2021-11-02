@@ -90,7 +90,7 @@ class TelegramChannel(Channel):
 class Watcher(object):
     def __init__(self, judge_session: aiohttp.ClientSession, channels: List[Tuple[Channel, Collection[EventType]]]):
         self.judge_session = judge_session
-        self.last_clarification_update = 0
+        self.last_clarification_update = time.time()
         self.channels = channels
         self.event_channels = {event: [] for event in EventType}
         for channel, events in self.channels:
