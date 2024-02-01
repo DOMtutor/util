@@ -13,7 +13,7 @@ from slack_sdk.errors import SlackClientError
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from dateutil import parser
 
-judge_url = "https://domjudge.ist.ac.at"
+judge_url = os.environ["DOMJUDGE_URL"]
 api_url = f"{judge_url}/api/v4"
 
 
@@ -204,7 +204,10 @@ class Watcher(object):
     async def run(self):
         if not all(await asyncio.gather(*[channel.check_auth() for channel, _ in self.channels])):
             return
+        if not all(await asyncio.gather(*[channel.send_message("Bot started") for channel, _ in self.channels])):
+            return
 
+        logging.info("Entering loop")
         while True:
             await asyncio.gather(*[
                 self.check_judge_api_status(),
@@ -215,13 +218,24 @@ class Watcher(object):
 
 
 async def main():
-    slack_client = SlackWebClient(token=os.environ["SLACK_API_TOKEN"])
-    telegram_bot = aiogram.Bot(token=os.environ["TELEGRAM_BOT_TOKEN"])
+    channels = []
+
+    env = os.environ
+    if "SLACK_API_TOKEN" in env:
+        slack_client = SlackWebClient(token=os.environ["SLACK_API_TOKEN"])
+        if "SLACK_CHANNEL_TOKEN" in env:
+            channels.append((SlackChannel(slack_client, os.environ["SLACK_CHANNEL_TOKEN"]), [EventType.NewClarification]))
+
+    if "TELEGRAM_BOT_TOKEN" in env:
+        telegram_bot = aiogram.Bot(token=os.environ["TELEGRAM_BOT_TOKEN"])
+        if "TELEGRAM_UPDATE_TOKENS" in env:
+            channels.append((TelegramChannel(telegram_bot, env["TELEGRAM_UPDATE_TOKENS"].split(",")), [EventType.JudgeStatus, EventType.NewClarification]))
+        if "TELEGRAM_STATUS_TOKENS" in env:
+            channels.append((TelegramChannel(telegram_bot, env["TELEGRAM_STATUS_TOKENS"].split(",")), [EventType.JudgeStatus]))
+
+    logging.info("Running bot with %s channels", len(channels))
     async with aiohttp.ClientSession(auth=BasicAuth('python_bot', os.environ["DOMJUDGE_API_PASSWORD"])) as session:
-        await Watcher(session, [
-            (SlackChannel(slack_client, "C02JK69916D"), [EventType.NewClarification]),
-            (TelegramChannel(telegram_bot, ["759428835"]), [EventType.JudgeStatus])
-        ]).run()
+        await Watcher(session, channels).run()
 
 
 if __name__ == "__main__":
